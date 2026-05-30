@@ -1,1 +1,17 @@
 # trabajo-lab-sistemas-operativos
+1. ¿Cómo evitó condiciones de carrera en el servidor?
+-Las condiciones de carrera se evitaron mediante la implementación de Mecanismos de Exclusión Mutua (Mutex) utilizando la clase Lock de la librería threading de Python.
+-En el sistema existen dos recursos críticos compartidos que sufren concurrencia:
+--La carpeta entrada: Es accedida concurrentemente por múltiples hilos de clientes que suben archivos (UPLOAD) y, al mismo tiempo, por el proceso demonio que lee y mueve dichos archivos. Se utilizó el objeto candado_archivos para asegurar que ningún cliente intente escribir o leer mientras el demonio está moviendo un archivo a la carpeta procesados, previniendo la corrupción o pérdida de datos.
+--El archivo registro.log: Múltiples hilos intentan escribir su historial de operaciones simultáneamente. Se implementó el objeto candado_log envolviendo la apertura y escritura del archivo (with candado_log:), forzando a que los hilos formen una cola ordenada en memoria y escriban uno a la vez de forma atómica.
+2. ¿Qué ventajas tiene usar hilos (threads) en lugar de procesos para este caso?
+-Para este sistema de gestión de archivos remotos, el uso de hilos presenta tres ventajas críticas sobre el uso de procesos independientes:
+--Menor consumo de recursos (Ligereza): Los hilos comparten el mismo espacio de direcciones virtuales del proceso padre. Crear un hilo para cada cliente nuevo consume una fracción mínima de memoria RAM y CPU en comparación con duplicar todo el contexto de un proceso mediante un fork.
+--Comunicación y sincronización eficiente: Al compartir el mismo espacio de memoria, los objetos de sincronización como los Lock (candados) se pueden compartir de manera directa y transparente entre los hilos de atención y el hilo trabajador, sin necesidad de recurrir a mecanismos complejos y pesados de Comunicación Interprocesos (IPC) como memoria compartida o tuberías del sistema operativo.
+--Idoneidad para operaciones de I/O (Entrada/Lectura): Dado que la tarea principal del servidor FTP es esperar paquetes de red y escribir/leer del disco, los hilos son perfectos, ya que cuando un hilo se bloquea esperando que termine una escritura en disco o un envío por red, el planificador del Sistema Operativo le cede inmediatamente el control a otro hilo listo, manteniendo una alta tasa de transferencia en paralelo.
+3. Explique el método de sincronización elegido.
+-El método de sincronización elegido fue el Candado de Exclusión Mutua (Mutex Lock) provisto por el módulo nativo de Python.
+-Este método funciona bajo un principio de estado binario (Bloqueado / Desbloqueado):
+--Cuando un hilo entra en una Sección Crítica (la zona de código que manipula el archivo compartido o el directorio), ejecuta la primitiva de adquisición del candado (acquire, manejada elegantemente en Python mediante la sentencia with candado:).
+--Si el candado está libre, el hilo lo toma y ejecuta su operación. Si otro hilo (u otro cliente) llega en ese preciso instante a intentar la misma operación, el sistema operativo suspende temporalmente a ese segundo hilo, poniéndolo en una cola de espera.
+--Una vez que el primer hilo termina de escribir en el log o mover el archivo, sale del bloque with, liberando automáticamente el candado (release). En ese momento, el siguiente hilo en la cola se despierta y toma el control, garantizando consistencia absoluta y la prevención total de corrupción de archivos compartidos.
